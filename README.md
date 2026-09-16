@@ -24,7 +24,7 @@ View your app in AI Studio: https://ai.studio/apps/96699c6b-41bb-46ab-9060-57ba9
 Posts are Markdown files in a separate repo (`BLOG_REPO`, default `VirajAnand-02/blogs`). `npm run build` clones it, renders every `posts/*.md` to HTML (`scripts/build-blog.ts`), builds the site, then writes a static page per post with its own link-preview tags (`scripts/prerender-blog.ts`).
 
 ```
-push posts/*.md ─▶ GitHub Action calls the Pages deploy hook ─▶ Cloudflare Pages runs `npm run build`
+push posts/*.md ─▶ GitHub webhook POSTs the Pages deploy hook ─▶ Cloudflare Pages runs `npm run build`
 ```
 
 `blog-starter/` is a ready-made copy of that repo: sample posts, the frontmatter format, and the deploy workflow.
@@ -36,7 +36,7 @@ push posts/*.md ─▶ GitHub Action calls the Pages deploy hook ─▶ Cloudfla
    - Build command `npm run build`, output directory `dist`
    - Environment variables: `BLOG_REPO=VirajAnand-02/blogs`, `SITE_URL=https://<your domain>`
 3. **Deploy hook:** Pages → Settings → Builds → Deploy hooks → add one for the production branch.
-4. **Wire it up:** in the posts repo, add an Actions secret `CF_PAGES_DEPLOY_HOOK` with the hook URL.
+4. **Wire it up:** in the posts repo, add a webhook (Settings → Webhooks) with the hook URL as payload URL, content type `application/json`, push events only. No GitHub Actions needed.
 
 From then on, pushing a post to `main` redeploys the site (about a minute).
 

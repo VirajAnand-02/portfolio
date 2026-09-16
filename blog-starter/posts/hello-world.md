@@ -9,11 +9,11 @@ This is a sample post from the blog starter. Replace it with your own writing â€
 
 ## How a post goes live
 
-![Push to the blog repo, a GitHub Action calls the Pages deploy hook, and the site rebuilds](./images/pipeline.svg)
+![Push to the blog repo, a GitHub webhook calls the Pages deploy hook, and the site rebuilds](./images/pipeline.svg)
 
 1. Write `posts/<slug>.md` with a little frontmatter.
 2. `git push` to `main`.
-3. A GitHub Action calls the Cloudflare Pages **deploy hook**.
+3. A GitHub webhook calls the Cloudflare Pages **deploy hook**.
 4. The build clones this repo, renders Markdown to HTML, and pre-renders a page per post with its own link preview.
 
 ## Frontmatter

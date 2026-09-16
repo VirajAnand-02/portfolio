@@ -10,7 +10,7 @@
     <text x="230" y="360" fill="#cdd6f4" text-anchor="middle">git push</text>
     <text x="230" y="400" fill="#7f849c" text-anchor="middle" font-size="18">posts/*.md</text>
     <rect x="450" y="300" width="300" height="140" fill="#181825" stroke="#45475a" stroke-width="2"/>
-    <text x="600" y="360" fill="#cdd6f4" text-anchor="middle">GitHub Action</text>
+    <text x="600" y="360" fill="#cdd6f4" text-anchor="middle">GitHub webhook</text>
     <text x="600" y="400" fill="#7f849c" text-anchor="middle" font-size="18">POST deploy hook</text>
     <rect x="820" y="300" width="300" height="140" fill="#233523" stroke="#a6e3a1" stroke-width="2"/>
     <text x="970" y="360" fill="#a6e3a1" text-anchor="middle">Pages build</text>
