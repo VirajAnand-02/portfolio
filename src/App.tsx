@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import {
   motion, AnimatePresence, useScroll, useSpring, useMotionValueEvent, useMotionValue,
   useDragControls, useAnimationControls, useReducedMotion, animate as animateValue
@@ -15,6 +15,10 @@ import { Link, matchRoute, navigate, usePath } from './router';
 import { formatDate, getIndex, usePosts } from './blog/data';
 import BlogIndex from './blog/BlogIndex';
 import BlogPost from './blog/BlogPost';
+import { CATALOG, GAME_IDS, findGameId } from './arcade/catalog';
+
+const loadArcade = () => import('./arcade/Arcade');
+const ArcadeMode = lazy(loadArcade);
 
 /* ============================== DATA (synced with resume, legacy kept) ============================== */
 
@@ -197,49 +201,6 @@ const certifications = [
 
 const FILTERS = ['All', 'AI', 'Backend', 'Web', 'Embedded', 'Automation'];
 
-/* ============================== helpers ============================== */
-
-function useHighScore(key: string, initial = 0) {
-  const [val, setVal] = useState<number>(() => {
-    try {
-      return Number(localStorage.getItem(key)) || initial;
-    } catch {
-      return initial;
-    }
-  });
-  const save = useCallback(
-    (v: number) => {
-      setVal((prev) => {
-        const next = Math.max(prev, v);
-        try {
-          localStorage.setItem(key, String(next));
-        } catch { /* noop */ }
-        return next;
-      });
-    },
-    [key]
-  );
-  return [val, save] as const;
-}
-
-function beep(freq = 660, dur = 0.07) {
-  try {
-    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'square';
-    o.frequency.value = freq;
-    g.gain.value = 0.04;
-    o.connect(g);
-    g.connect(ctx.destination);
-    o.start();
-    o.stop(ctx.currentTime + dur);
-    setTimeout(() => ctx.close(), dur * 1000 + 100);
-  } catch { /* audio unavailable */ }
-}
-
 /* ============================== Konami hint (decorative) ============================== */
 
 const KonamiHint = () => {
@@ -319,465 +280,7 @@ const ProfilePhoto = () => {
   );
 };
 
-/* ============================== ARCADE ============================== */
-
-const PauseMenu = ({ onResume, onReset, onExitToMenu, onExitToSystem }: any) => (
-  <div className="absolute inset-0 z-50 flex items-center justify-center bg-ctp-crust/80 backdrop-blur-sm">
-    <div className="bg-zinc-900 border border-accent-500 p-8 flex flex-col items-center gap-4 shadow-[0_0_30px_rgb(var(--accent-rgb)/0.2)] min-w-[300px]">
-      <h2 className="text-3xl text-accent-500 mb-6 animate-pulse">PAUSED</h2>
-      <button onClick={onResume} className="w-full hover:text-white hover:bg-accent-900/30 border border-transparent hover:border-accent-500 px-4 py-2 transition-all">&gt; RESUME</button>
-      <button onClick={onReset} className="w-full hover:text-white hover:bg-accent-900/30 border border-transparent hover:border-accent-500 px-4 py-2 transition-all">&gt; RESET GAME</button>
-      <button onClick={onExitToMenu} className="w-full hover:text-white hover:bg-accent-900/30 border border-transparent hover:border-accent-500 px-4 py-2 transition-all">&gt; GAME SELECT</button>
-      <button onClick={onExitToSystem} className="w-full hover:text-red-500 hover:bg-red-900/30 border border-transparent hover:border-red-500 px-4 py-2 transition-all text-zinc-500 mt-4">&gt; EXIT TO SYSTEM</button>
-    </div>
-  </div>
-);
-
-const DPad = ({ onPress }: { onPress: (dir: string) => void }) => (
-  <div className="grid grid-cols-3 gap-1 mt-4 select-none md:hidden">
-    <div />
-    <button aria-label="up" className="bg-zinc-800 border border-accent-500/30 p-3 active:bg-accent-900" onTouchStart={() => onPress('up')} onClick={() => onPress('up')}><ArrowUp className="w-5 h-5 mx-auto" /></button>
-    <div />
-    <button aria-label="left" className="bg-zinc-800 border border-accent-500/30 p-3 active:bg-accent-900" onTouchStart={() => onPress('left')} onClick={() => onPress('left')}><ArrowLeft className="w-5 h-5 mx-auto" /></button>
-    <button aria-label="down" className="bg-zinc-800 border border-accent-500/30 p-3 active:bg-accent-900" onTouchStart={() => onPress('down')} onClick={() => onPress('down')}><ArrowDown className="w-5 h-5 mx-auto" /></button>
-    <button aria-label="right" className="bg-zinc-800 border border-accent-500/30 p-3 active:bg-accent-900" onTouchStart={() => onPress('right')} onClick={() => onPress('right')}><ArrowRight className="w-5 h-5 mx-auto" /></button>
-  </div>
-);
-
-const SnakeGame = ({ onExitToMenu, onExitToSystem }: { onExitToMenu: () => void; onExitToSystem: () => void }) => {
-  const [snake, setSnake] = useState([{ x: 10, y: 10 }]);
-  const [food, setFood] = useState({ x: 15, y: 15 });
-  const [dir, setDir] = useState({ x: 1, y: 0 });
-  const [gameOver, setGameOver] = useState(false);
-  const [score, setScore] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-  const [speed, setSpeed] = useState<'chill' | 'normal' | 'insane'>('normal');
-  const [high, saveHigh] = useHighScore('arcade-snake-high', 0);
-  const intervalMs = speed === 'chill' ? 160 : speed === 'normal' ? 100 : 60;
-  const dirRef = useRef(dir);
-  dirRef.current = dir;
-
-  useEffect(() => {
-    if (gameOver || isPaused) return;
-    const moveSnake = () => {
-      setSnake((prev) => {
-        const head = prev[0];
-        const d = dirRef.current;
-        const newHead = { x: head.x + d.x, y: head.y + d.y };
-        if (newHead.x < 0 || newHead.x >= 20 || newHead.y < 0 || newHead.y >= 20) {
-          setGameOver(true);
-          saveHigh(score);
-          return prev;
-        }
-        if (prev.some((s) => s.x === newHead.x && s.y === newHead.y)) {
-          setGameOver(true);
-          saveHigh(score);
-          return prev;
-        }
-        const newSnake = [newHead, ...prev];
-        if (newHead.x === food.x && newHead.y === food.y) {
-          setScore((s) => s + 10);
-          beep(880);
-          setFood({ x: Math.floor(Math.random() * 20), y: Math.floor(Math.random() * 20) });
-        } else {
-          newSnake.pop();
-        }
-        return newSnake;
-      });
-    };
-    const interval = setInterval(moveSnake, intervalMs);
-    return () => clearInterval(interval);
-  }, [food, gameOver, isPaused, intervalMs, score, saveHigh]);
-
-  useEffect(() => {
-    if (!gameOver) saveHigh(score);
-  }, [score, gameOver, saveHigh]);
-
-  const steer = useCallback((key: string) => {
-    const d = dirRef.current;
-    if (key === 'up' && d.y !== 1) setDir({ x: 0, y: -1 });
-    if (key === 'down' && d.y !== -1) setDir({ x: 0, y: 1 });
-    if (key === 'left' && d.x !== 1) setDir({ x: -1, y: 0 });
-    if (key === 'right' && d.x !== -1) setDir({ x: 1, y: 0 });
-  }, []);
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsPaused((p) => !p);
-        return;
-      }
-      if (isPaused) return;
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'].includes(e.key)) e.preventDefault();
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') steer('up');
-      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') steer('down');
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') steer('left');
-      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') steer('right');
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [isPaused, steer]);
-
-  const resetGame = () => {
-    setSnake([{ x: 10, y: 10 }]);
-    setDir({ x: 1, y: 0 });
-    setScore(0);
-    setGameOver(false);
-    setIsPaused(false);
-    setFood({ x: Math.floor(Math.random() * 20), y: Math.floor(Math.random() * 20) });
-  };
-
-  return (
-    <div className="flex flex-col items-center z-10 relative px-4">
-      <div className="flex justify-between w-full max-w-[400px] mb-3 text-lg">
-        <span>SCORE: {score}</span>
-        <span className="text-yellow-400 flex items-center gap-1 text-sm"><Trophy className="w-4 h-4" /> {Math.max(high, score)}</span>
-        <button onClick={() => setIsPaused(true)} className="hover:text-accent-300">PAUSE</button>
-      </div>
-      <div className="flex gap-2 mb-3 text-xs font-mono">
-        {(['chill', 'normal', 'insane'] as const).map((s) => (
-          <button key={s} onClick={() => setSpeed(s)} className={`px-3 py-1 border ${speed === s ? 'border-accent-500 text-accent-400 bg-accent-950/40' : 'border-zinc-700 text-zinc-500'}`}>{s.toUpperCase()}</button>
-        ))}
-      </div>
-      <div className="w-[min(400px,86vw)] h-[min(400px,86vw)] bg-zinc-900 border-2 border-accent-500 relative shadow-[0_0_30px_rgb(var(--accent-rgb)/0.2)]">
-        {snake.map((segment, i) => (
-          <div key={i} className={`absolute ${i === 0 ? 'bg-accent-300' : 'bg-accent-500'}`} style={{ left: `${segment.x * 5}%`, top: `${segment.y * 5}%`, width: '5%', height: '5%' }} />
-        ))}
-        <div className="absolute bg-red-500 animate-pulse rounded-sm" style={{ left: `${food.x * 5}%`, top: `${food.y * 5}%`, width: '5%', height: '5%' }} />
-        {isPaused && !gameOver && <PauseMenu onResume={() => setIsPaused(false)} onReset={resetGame} onExitToMenu={onExitToMenu} onExitToSystem={onExitToSystem} />}
-      </div>
-      <DPad onPress={steer} />
-      {gameOver && (
-        <div className="mt-8 text-center absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-ctp-crust/90 p-8 rounded-xl border border-accent-500 backdrop-blur-md shadow-2xl z-20">
-          <h2 className="text-3xl text-red-500 mb-2 animate-pulse">GAME OVER</h2>
-          <p className="text-zinc-400 mb-4 font-mono text-sm">SCORE {score} · BEST {Math.max(high, score)}</p>
-          <button onClick={resetGame} className="hover:text-white text-xl border border-accent-500 px-4 py-2 bg-accent-900/30">TRY AGAIN</button>
-        </div>
-      )}
-      {!gameOver && <div className="mt-4 text-zinc-500 text-center text-sm">ARROWS / WASD TO MOVE · ESC TO PAUSE</div>}
-    </div>
-  );
-};
-
-const PongGame = ({ onExitToMenu, onExitToSystem }: { onExitToMenu: () => void; onExitToSystem: () => void }) => {
-  const [paddle1, setPaddle1] = useState(40);
-  const [paddle2, setPaddle2] = useState(40);
-  const [ball, setBall] = useState({ x: 50, y: 50 });
-  const [ballDir, setBallDir] = useState({ x: 1.5, y: 1.5 });
-  const [score, setScore] = useState({ p1: 0, p2: 0 });
-  const [isPaused, setIsPaused] = useState(false);
-  const [difficulty, setDifficulty] = useState<'easy' | 'hard'>('easy');
-  const [best, saveBest] = useHighScore('arcade-pong-best', 0);
-
-  useEffect(() => {
-    if (isPaused) return;
-    const interval = setInterval(() => {
-      setBall((prev) => {
-        let newX = prev.x + ballDir.x;
-        let newY = prev.y + ballDir.y;
-        let newDirX = ballDir.x;
-        let newDirY = ballDir.y;
-        if (newY <= 0 || newY >= 98) newDirY *= -1;
-        if (newX <= 4 && newY >= paddle1 - 2 && newY <= paddle1 + 22) {
-          newDirX = Math.abs(newDirX) * 1.05;
-          newX = 4;
-          beep(520);
-        }
-        if (newX >= 94 && newY >= paddle2 - 2 && newY <= paddle2 + 22) {
-          newDirX = -Math.abs(newDirX) * 1.05;
-          newX = 94;
-          beep(440);
-        }
-        if (newX <= 0) {
-          setScore((s) => {
-            saveBest(s.p1);
-            return { ...s, p2: s.p2 + 1 };
-          });
-          newX = 50; newY = 50; newDirX = 1.5; newDirY = 1.5;
-        }
-        if (newX >= 98) {
-          setScore((s) => {
-            const np1 = s.p1 + 1;
-            saveBest(np1);
-            beep(880);
-            return { ...s, p1: np1 };
-          });
-          newX = 50; newY = 50; newDirX = -1.5; newDirY = 1.5;
-        }
-        if (newDirX !== ballDir.x || newDirY !== ballDir.y) setBallDir({ x: newDirX, y: newDirY });
-        return { x: newX, y: newY };
-      });
-      setPaddle2((prev) => {
-        const target = ball.y - 10;
-        const agility = difficulty === 'easy' ? 0.12 : 0.22;
-        return prev + (target - prev) * agility;
-      });
-    }, 30);
-    return () => clearInterval(interval);
-  }, [ball, ballDir, paddle1, paddle2, isPaused, difficulty, saveBest]);
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsPaused((p) => !p);
-        return;
-      }
-      if (isPaused) return;
-      if (['ArrowUp', 'ArrowDown', 'w', 's', 'W', 'S'].includes(e.key)) e.preventDefault();
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') setPaddle1((p) => Math.max(0, p - 12));
-      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') setPaddle1((p) => Math.min(80, p + 12));
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [isPaused]);
-
-  const resetGame = () => {
-    setPaddle1(40); setPaddle2(40); setBall({ x: 50, y: 50 }); setBallDir({ x: 1.5, y: 1.5 }); setScore({ p1: 0, p2: 0 }); setIsPaused(false);
-  };
-
-  return (
-    <div className="flex flex-col items-center z-10 w-full max-w-3xl relative px-4">
-      <div className="flex justify-between w-full mb-3 text-2xl px-2">
-        <span className="text-accent-400">P1: {score.p1}</span>
-        <span className="text-yellow-400 text-sm flex items-center gap-1"><Trophy className="w-4 h-4" /> BEST {Math.max(best, score.p1)}</span>
-        <button onClick={() => setIsPaused(true)} className="hover:text-accent-300 text-xl">PAUSE</button>
-        <span className="text-red-400">CPU: {score.p2}</span>
-      </div>
-      <div className="flex gap-2 mb-3 text-xs font-mono">
-        {(['easy', 'hard'] as const).map((d) => (
-          <button key={d} onClick={() => setDifficulty(d)} className={`px-3 py-1 border ${difficulty === d ? 'border-accent-500 text-accent-400 bg-accent-950/40' : 'border-zinc-700 text-zinc-500'}`}>{d.toUpperCase()} CPU</button>
-        ))}
-      </div>
-      <div className="w-full aspect-[2/1] bg-zinc-900 border-2 border-accent-500 relative overflow-hidden shadow-[0_0_30px_rgb(var(--accent-rgb)/0.2)] touch-none"
-        onTouchMove={(e) => {
-          const t = e.touches[0];
-          const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-          const pct = ((t.clientY - rect.top) / rect.height) * 100 - 10;
-          setPaddle1(Math.max(0, Math.min(80, pct)));
-        }}>
-        <div className="absolute bg-accent-500 w-[2%] h-[20%] shadow-[0_0_10px_rgb(var(--accent-rgb)/0.8)]" style={{ left: '2%', top: `${paddle1}%` }} />
-        <div className="absolute bg-red-500 w-[2%] h-[20%] shadow-[0_0_10px_rgb(243_139_168/0.8)]" style={{ right: '2%', top: `${paddle2}%` }} />
-        <div className="absolute bg-white w-[2%] aspect-square rounded-full shadow-[0_0_10px_rgba(255,255,255,0.8)]" style={{ left: `${ball.x}%`, top: `${ball.y}%` }} />
-        <div className="absolute left-1/2 top-0 bottom-0 w-px border-l-2 border-dashed border-accent-500/30" />
-        {isPaused && <PauseMenu onResume={() => setIsPaused(false)} onReset={resetGame} onExitToMenu={onExitToMenu} onExitToSystem={onExitToSystem} />}
-      </div>
-      <div className="mt-4 text-zinc-500 text-center text-sm">UP/DOWN OR W/S · DRAG ON MOBILE · ESC TO PAUSE</div>
-    </div>
-  );
-};
-
-const TETROMINOES = 'IJLOSTZ';
-const SHAPES: Record<string, { shape: number[][]; color: string }> = {
-  I: { shape: [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]], color: 'bg-cyan-400' },
-  J: { shape: [[1, 0, 0], [1, 1, 1], [0, 0, 0]], color: 'bg-blue-500' },
-  L: { shape: [[0, 0, 1], [1, 1, 1], [0, 0, 0]], color: 'bg-orange-500' },
-  O: { shape: [[1, 1], [1, 1]], color: 'bg-yellow-400' },
-  S: { shape: [[0, 1, 1], [1, 1, 0], [0, 0, 0]], color: 'bg-green-500' },
-  T: { shape: [[0, 1, 0], [1, 1, 1], [0, 0, 0]], color: 'bg-purple-500' },
-  Z: { shape: [[1, 1, 0], [0, 1, 1], [0, 0, 0]], color: 'bg-red-500' },
-};
-const COLS = 10;
-const ROWS = 20;
-const createEmptyBoard = () => Array.from({ length: ROWS }, () => Array(COLS).fill(0 as string | 0));
-const randomPiece = () => {
-  const type = TETROMINOES[Math.floor(Math.random() * TETROMINOES.length)];
-  return { ...SHAPES[type], x: Math.floor(COLS / 2) - Math.floor(SHAPES[type].shape[0].length / 2), y: 0 };
-};
-const checkCollision = (piece: any, board: any[][], dx: number, dy: number, shape = piece.shape) => {
-  for (let y = 0; y < shape.length; y++) {
-    for (let x = 0; x < shape[y].length; x++) {
-      if (shape[y][x]) {
-        const newX = piece.x + x + dx;
-        const newY = piece.y + y + dy;
-        if (newX < 0 || newX >= COLS || newY >= ROWS || (newY >= 0 && board[newY][newX] !== 0)) return true;
-      }
-    }
-  }
-  return false;
-};
-
-const TetrisGame = ({ onExitToMenu, onExitToSystem }: { onExitToMenu: () => void; onExitToSystem: () => void }) => {
-  const [state, setState] = useState({ board: createEmptyBoard(), piece: randomPiece(), score: 0, lines: 0, level: 1, gameOver: false, isPaused: false });
-  const [high, saveHigh] = useHighScore('arcade-tetris-high', 0);
-
-  useEffect(() => {
-    if (state.gameOver || state.isPaused) return;
-    const speed = Math.max(120, 500 - (state.level - 1) * 50);
-    const moveDown = () => {
-      setState((prev) => {
-        if (checkCollision(prev.piece, prev.board, 0, 1)) {
-          const newBoard = prev.board.map((row) => [...row]);
-          let isGameOver = false;
-          prev.piece.shape.forEach((row: number[], y: number) => {
-            row.forEach((val: number, x: number) => {
-              if (val) {
-                if (prev.piece.y + y < 0) isGameOver = true;
-                else if (prev.piece.y + y < ROWS) newBoard[prev.piece.y + y][prev.piece.x + x] = prev.piece.color;
-              }
-            });
-          });
-          if (isGameOver) {
-            saveHigh(prev.score);
-            return { ...prev, gameOver: true };
-          }
-          let linesCleared = 0;
-          const finalBoard = newBoard.filter((row) => {
-            if (row.every((cell) => cell !== 0)) {
-              linesCleared++;
-              return false;
-            }
-            return true;
-          });
-          while (finalBoard.length < ROWS) finalBoard.unshift(Array(COLS).fill(0));
-          const newScore = prev.score + [0, 100, 300, 500, 800][linesCleared] * prev.level;
-          const newLines = prev.lines + linesCleared;
-          const newLevel = Math.floor(newLines / 10) + 1;
-          if (linesCleared > 0) beep(700 + linesCleared * 100);
-          saveHigh(newScore);
-          return { ...prev, board: finalBoard, piece: randomPiece(), score: newScore, lines: newLines, level: newLevel };
-        }
-        return { ...prev, piece: { ...prev.piece, y: prev.piece.y + 1 } };
-      });
-    };
-    const interval = setInterval(moveDown, speed);
-    return () => clearInterval(interval);
-  }, [state.gameOver, state.isPaused, state.level, saveHigh]);
-
-  const doMove = useCallback((action: 'left' | 'right' | 'down' | 'rotate') => {
-    setState((prev) => {
-      if (prev.gameOver || prev.isPaused) return prev;
-      const p = prev.piece;
-      if (action === 'left' && !checkCollision(p, prev.board, -1, 0)) return { ...prev, piece: { ...p, x: p.x - 1 } };
-      if (action === 'right' && !checkCollision(p, prev.board, 1, 0)) return { ...prev, piece: { ...p, x: p.x + 1 } };
-      if (action === 'down' && !checkCollision(p, prev.board, 0, 1)) return { ...prev, piece: { ...p, y: p.y + 1 } };
-      if (action === 'rotate') {
-        const rotated = p.shape[0].map((_: any, i: number) => p.shape.map((row: any[]) => row[i]).reverse());
-        if (!checkCollision(p, prev.board, 0, 0, rotated)) return { ...prev, piece: { ...p, shape: rotated } };
-      }
-      return prev;
-    });
-  }, []);
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (state.gameOver) return;
-      if (e.key === 'Escape') {
-        setState((prev) => ({ ...prev, isPaused: !prev.isPaused }));
-        return;
-      }
-      if (state.isPaused) return;
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault();
-      if (e.key === 'ArrowLeft' || e.key === 'a') doMove('left');
-      if (e.key === 'ArrowRight' || e.key === 'd') doMove('right');
-      if (e.key === 'ArrowDown' || e.key === 's') doMove('down');
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === ' ') doMove('rotate');
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [state.gameOver, state.isPaused, doMove]);
-
-  const resetGame = () => setState({ board: createEmptyBoard(), piece: randomPiece(), score: 0, lines: 0, level: 1, gameOver: false, isPaused: false });
-
-  const displayBoard = state.board.map((row) => [...row]);
-  if (!state.gameOver) {
-    state.piece.shape.forEach((row: number[], y: number) => {
-      row.forEach((val: number, x: number) => {
-        if (val && state.piece.y + y >= 0 && state.piece.y + y < ROWS && state.piece.x + x >= 0 && state.piece.x + x < COLS) {
-          displayBoard[state.piece.y + y][state.piece.x + x] = state.piece.color;
-        }
-      });
-    });
-  }
-
-  return (
-    <div className="flex flex-col items-center z-10 w-full max-w-md relative px-4">
-      <div className="flex justify-between w-full mb-3 text-lg px-1">
-        <span>SCORE: {state.score}</span>
-        <span className="text-xs text-zinc-400 font-mono self-center">LVL {state.level} · {state.lines} LINES</span>
-        <span className="text-yellow-400 text-sm flex items-center gap-1"><Trophy className="w-4 h-4" /> {Math.max(high, state.score)}</span>
-        <button onClick={() => setState((p) => ({ ...p, isPaused: true }))} className="hover:text-accent-300">PAUSE</button>
-      </div>
-      <div className="bg-zinc-900 border-2 border-accent-500 p-1 shadow-[0_0_30px_rgb(var(--accent-rgb)/0.2)] relative">
-        <div className="grid grid-cols-10 gap-[1px] bg-zinc-800" style={{ width: 'min(240px,70vw)', height: 'min(480px,140vw)' }}>
-          {displayBoard.map((row, y) => row.map((cell, x) => <div key={`${y}-${x}`} className={`${cell || 'bg-zinc-900'}`} />))}
-        </div>
-        {state.isPaused && !state.gameOver && (
-          <PauseMenu onResume={() => setState((p) => ({ ...p, isPaused: false }))} onReset={resetGame} onExitToMenu={onExitToMenu} onExitToSystem={onExitToSystem} />
-        )}
-      </div>
-      <div className="grid grid-cols-4 gap-1 mt-3 md:hidden w-full max-w-[280px]">
-        <button className="bg-zinc-800 border border-accent-500/30 p-3" onClick={() => doMove('left')}><ArrowLeft className="w-5 h-5 mx-auto" /></button>
-        <button className="bg-zinc-800 border border-accent-500/30 p-3" onClick={() => doMove('down')}><ArrowDown className="w-5 h-5 mx-auto" /></button>
-        <button className="bg-zinc-800 border border-accent-500/30 p-3" onClick={() => doMove('right')}><ArrowRight className="w-5 h-5 mx-auto" /></button>
-        <button className="bg-zinc-800 border border-accent-500/30 p-3 text-accent-400 font-bold" onClick={() => doMove('rotate')}>⟳</button>
-      </div>
-      {state.gameOver && (
-        <div className="mt-8 text-center absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-ctp-crust/90 p-8 rounded-xl border border-accent-500 backdrop-blur-md shadow-2xl z-20">
-          <h2 className="text-3xl text-red-500 mb-2 animate-pulse">GAME OVER</h2>
-          <p className="text-zinc-400 mb-4 font-mono text-sm">SCORE {state.score} · BEST {Math.max(high, state.score)}</p>
-          <button onClick={resetGame} className="hover:text-white text-xl border border-accent-500 px-4 py-2 bg-accent-900/30">TRY AGAIN</button>
-        </div>
-      )}
-      {!state.gameOver && <div className="mt-3 text-zinc-500 text-sm text-center">ARROWS / SPACE TO ROTATE · ESC TO PAUSE</div>}
-    </div>
-  );
-};
-
-const ArcadeMode = ({ onClose, initialGame }: { onClose: () => void; initialGame?: string | null }) => {
-  const [activeGame, setActiveGame] = useState<string | null>(initialGame ?? null);
-  const [snakeHigh] = useHighScore('arcade-snake-high', 0);
-  const [pongBest] = useHighScore('arcade-pong-best', 0);
-  const [tetrisHigh] = useHighScore('arcade-tetris-high', 0);
-
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (activeGame) return;
-      if (e.key === '1') setActiveGame('snake');
-      if (e.key === '2') setActiveGame('pong');
-      if (e.key === '3') setActiveGame('tetris');
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [activeGame, onClose]);
-
-  const cards = [
-    { id: 'snake', title: 'SNAKE', desc: 'Eat · Grow · Survive. 3 speeds, WASD + touch pad.', best: snakeHigh, key: '1' },
-    { id: 'pong', title: 'PONG', desc: 'Beat the CPU. Easy/Hard AI, drag on mobile.', best: pongBest, key: '2' },
-    { id: 'tetris', title: 'TETRIS', desc: 'Stack · Clear · Level up. Full scoring + levels.', best: tetrisHigh, key: '3' },
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 bg-ctp-base text-accent-500 font-mono flex flex-col items-center justify-center overflow-y-auto py-8">
-      <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px] z-50 opacity-50" />
-      {!activeGame ? (
-        <div className="relative z-10 flex flex-col items-center w-full max-w-3xl px-4">
-          <h1 className="text-5xl md:text-7xl font-bold mb-3 animate-pulse text-transparent bg-clip-text bg-gradient-to-b from-accent-400 to-accent-700 tracking-widest">ARCADE</h1>
-          <p className="text-zinc-500 text-sm mb-8">high-scores saved locally · press 1/2/3 to quick-launch</p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full mb-8">
-            {cards.map((c) => (
-              <button key={c.id} onClick={() => setActiveGame(c.id)} className="border border-accent-500/30 bg-zinc-900/50 p-6 text-left hover:border-accent-400 hover:bg-accent-950/20 hover:-translate-y-1 transition-all group">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-2xl font-bold group-hover:text-white">[{c.key}] {c.title}</span>
-                  <Play className="w-5 h-5 opacity-50 group-hover:opacity-100 group-hover:text-accent-300" />
-                </div>
-                <p className="text-xs text-zinc-400 leading-relaxed mb-4">{c.desc}</p>
-                <p className="text-xs text-yellow-400 flex items-center gap-1"><Trophy className="w-3 h-3" /> BEST: {c.best}</p>
-              </button>
-            ))}
-          </div>
-          <button onClick={onClose} className="hover:text-red-500 hover:scale-110 transition-all text-zinc-500 text-xl">&gt; EXIT TO SYSTEM (ESC)</button>
-        </div>
-      ) : activeGame === 'snake' ? (
-        <SnakeGame onExitToMenu={() => setActiveGame(null)} onExitToSystem={onClose} />
-      ) : activeGame === 'pong' ? (
-        <PongGame onExitToMenu={() => setActiveGame(null)} onExitToSystem={onClose} />
-      ) : (
-        <TetrisGame onExitToMenu={() => setActiveGame(null)} onExitToSystem={onClose} />
-      )}
-    </div>
-  );
-};
+/* ============================== ARCADE (src/arcade) ============================== */
 
 const useKonamiCode = (callback: () => void) => {
   useEffect(() => {
@@ -808,7 +311,7 @@ type TermLine = { id: number; kind: 'in' | 'out' | 'sys' | 'err' | 'node'; text?
 const TERMINAL_COMMANDS = ['help', 'whoami', 'about', 'skills', 'projects', 'project', 'blog', 'read', 'education', 'gate', 'contact', 'open', 'echo', 'date', 'clear', 'history', 'arcade', 'play', 'theme', 'neofetch', 'ls', 'cat', 'sudo', 'exit'];
 
 const ARG_COMPLETIONS: Record<string, string[]> = {
-  play: ['snake', 'pong', 'tetris'],
+  play: GAME_IDS,
   open: ['github', 'linkedin', 'email', 'nb-make'],
   projects: ['ai', 'backend', 'web', 'embedded', 'automation'],
   theme: ['dark', 'light'],
@@ -1241,7 +744,7 @@ const TerminalOverlay = ({
         `Mounted /home/viraj/projects (${projects.length} modules)`,
         `Started skills-matrix.service (${skills.reduce((n, s) => n + s.items.length, 0)} entries)`,
         'Reached target gate-rank.target (AIR 3460)',
-        'Started arcade.socket (snake, pong, tetris)',
+        `Started arcade.socket (${CATALOG.length} games)`,
         'Started vsh — the viraj shell',
       ];
       steps.forEach((msg, i) => later(60 + i * 110, () => print([{ kind: 'node', node: <BootLine msg={msg} /> }])));
@@ -1320,7 +823,7 @@ const TerminalOverlay = ({
 
     switch (lower) {
       case 'help':
-        out(`COMMANDS:\n  help              show this message\n  whoami / about    professional summary\n  skills            grouped skill matrix\n  projects [tag]    list projects (tags: ai backend web embedded automation)\n  project <n>       project details, e.g. project 1\n  blog [tag]        list blog posts\n  read <n|slug>     open a blog post\n  education         degrees + marks\n  gate              GATE ranks\n  contact           email / location / socials\n  open <target>     open github | linkedin | email | nb-make\n  arcade            open game arcade\n  play <snake|pong|tetris>  launch a game directly\n  theme [dark|light]  switch site theme\n  echo <text>       print text\n  date              current date/time\n  neofetch          system specs\n  ls / cat resume   easter eggs\n  history           previous commands\n  clear             clear screen (or ctrl+L)\n  exit              close terminal\n\nKEYS: tab complete · → accept suggestion · ↑/↓ history · ctrl+C cancel`);
+        out(`COMMANDS:\n  help              show this message\n  whoami / about    professional summary\n  skills            grouped skill matrix\n  projects [tag]    list projects (tags: ai backend web embedded automation)\n  project <n>       project details, e.g. project 1\n  blog [tag]        list blog posts\n  read <n|slug>     open a blog post\n  education         degrees + marks\n  gate              GATE ranks\n  contact           email / location / socials\n  open <target>     open github | linkedin | email | nb-make\n  arcade            open game arcade\n  play <game>       launch a game (tab lists them)\n  theme [dark|light]  switch site theme\n  echo <text>       print text\n  date              current date/time\n  neofetch          system specs\n  ls / cat resume   easter eggs\n  history           previous commands\n  clear             clear screen (or ctrl+L)\n  exit              close terminal\n\nKEYS: tab complete · → accept suggestion · ↑/↓ history · ctrl+C cancel`);
         break;
       case 'whoami':
       case 'about':
@@ -1382,12 +885,13 @@ const TerminalOverlay = ({
         setTimeout(() => onLaunchArcade(null), 700);
         break;
       case 'play': {
-        const g = (args[0] || '').toLowerCase();
-        if (['snake', 'pong', 'tetris'].includes(g)) {
-          spin(`Loading ${g}…`, `Launching ${g}`, 550);
-          setTimeout(() => onLaunchArcade(g), 700);
+        const id = findGameId(args[0] || '');
+        if (id) {
+          spin(`Loading ${id}…`, `Launching ${id}`, 550);
+          setTimeout(() => onLaunchArcade(id), 700);
         } else {
-          out('Usage: play <snake|pong|tetris>', 'err');
+          out(`Usage: play <game>
+Games: ${GAME_IDS.join(', ')}`, 'err');
         }
         break;
       }
@@ -2084,6 +1588,13 @@ export default function App() {
 
   useKonamiCode(() => setArcadeMode(true));
 
+  // warm the arcade chunk once the page is idle so G / play opens instantly
+  useEffect(() => {
+    const w = window as any;
+    const id = w.requestIdleCallback ? w.requestIdleCallback(() => loadArcade(), { timeout: 5000 }) : window.setTimeout(() => loadArcade(), 3000);
+    return () => (w.cancelIdleCallback ? w.cancelIdleCallback(id) : window.clearTimeout(id));
+  }, []);
+
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
       document.body.style.setProperty('--mouse-x', `${e.clientX}px`);
@@ -2168,7 +1679,7 @@ export default function App() {
       { id: 'link-x', group: 'Links', label: 'X / Twitter', hint: '@Viraj_Anand_02', icon: <Twitter className="w-4 h-4" />, run: () => open(PROFILE.twitter) },
       { id: 'link-nb', group: 'Links', label: 'nb-make (live)', hint: 'nb-make.vrj02.dev', icon: <Globe className="w-4 h-4" />, run: () => open('https://nb-make.vrj02.dev') },
       { id: 'game-arcade', group: 'Arcade', label: 'Open arcade', hint: 'G', icon: <Play className="w-4 h-4" />, run: () => openArcade(null) },
-      ...['snake', 'pong', 'tetris'].map((g) => ({ id: `game-${g}`, group: 'Arcade', label: `Play ${g}`, icon: <Play className="w-4 h-4" />, run: () => openArcade(g) })),
+      ...CATALOG.map((g) => ({ id: `game-${g.id}`, group: 'Arcade', label: `Play ${g.title.toLowerCase()}`, icon: <Play className="w-4 h-4" />, run: () => openArcade(g.id) })),
     ];
   }, [isDark, copyEmail, openArcade, posts, isHome]);
 
@@ -2193,7 +1704,9 @@ export default function App() {
       <div className="backdrop-layer backdrop-grid" aria-hidden />
       <div className="backdrop-layer backdrop-diagonals" aria-hidden />
 
-      <AnimatePresence>{arcadeMode && <ArcadeMode initialGame={arcadeInitial} onClose={() => { setArcadeMode(false); setArcadeInitial(null); }} />}</AnimatePresence>
+      <Suspense fallback={null}>
+        <AnimatePresence>{arcadeMode && <ArcadeMode initialGame={arcadeInitial} onClose={() => { setArcadeMode(false); setArcadeInitial(null); }} />}</AnimatePresence>
+      </Suspense>
 
       {/* scroll progress */}
       <motion.div className="fixed top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-ctp-green via-ctp-sky to-ctp-mauve z-[60] origin-left" style={{ scaleX: progress }} />
