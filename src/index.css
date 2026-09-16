@@ -1,0 +1,413 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Surfaces — Mocha, pulled a notch deeper so the pastels keep their contrast */
+  --color-ctp-base: #1b1b2a;   /* panels, header, cards */
+  --color-ctp-mantle: #141420; /* page background, code blocks, terminal chrome */
+  --color-ctp-crust: #0d0d15;  /* text on solid accents, modal backdrops */
+
+  /* Mocha accents with a little extra chroma */
+  --color-ctp-rosewater: #f5dcd6;
+  --color-ctp-flamingo: #f2c6c6;
+  --color-ctp-pink: #f5b8e6;
+  --color-ctp-mauve: #c69cff;
+  --color-ctp-red: #f7839f;
+  --color-ctp-maroon: #ee97a5;
+  --color-ctp-peach: #ffab78;
+  --color-ctp-yellow: #fbdf9f;
+  --color-ctp-green: #9fe597;
+  --color-ctp-teal: #86e5d2;
+  --color-ctp-sky: #7ddcf0;
+  --color-ctp-sapphire: #68c3f3;
+  --color-ctp-blue: #82acff;
+  --color-ctp-lavender: #aeb8ff;
+
+  /* Primary accent — ramp around the green (400/500) */
+  --color-accent-50: #effcee;
+  --color-accent-100: #dcf8d9;
+  --color-accent-200: #c7f3c2;
+  --color-accent-300: #b3edac;
+  --color-accent-400: #9fe597;
+  --color-accent-500: #9fe597;
+  --color-accent-600: #7fcb77;
+  --color-accent-700: #61a55a;
+  --color-accent-800: #467a42;
+  --color-accent-900: #30522e;
+  --color-accent-950: #203720;
+
+  /* Neutrals — Mocha text/overlay steps, text brightened a step, borders quieter */
+  --color-zinc-50: #f3f5ff;
+  --color-zinc-100: #e8ecfd;
+  --color-zinc-200: #d9e0f8;
+  --color-zinc-300: #cdd6f4;
+  --color-zinc-400: #b3bbd8;
+  --color-zinc-500: #8d93ad;
+  --color-zinc-600: #737891;
+  --color-zinc-700: #5a5e76;
+  --color-zinc-800: #34364b;
+  --color-zinc-900: #282939;
+  --color-zinc-950: #212130;
+
+  /* Supporting hues — Mocha pastels */
+  --color-red-300: #f5a9bf;
+  --color-red-400: #f7839f;
+  --color-red-500: #eb7a9b;
+  --color-red-900: #5c2b3d;
+  --color-yellow-300: #fbdf9f;
+  --color-yellow-400: #fbdf9f;
+  --color-yellow-500: #e9cf93;
+  --color-orange-500: #ffab78;
+  --color-green-400: #9fe597;
+  --color-green-500: #9fe597;
+  --color-teal-200: #86e5d2;
+  --color-cyan-300: #7ddcf0;
+  --color-cyan-400: #7ddcf0;
+  --color-cyan-500: #74c7ec;
+  --color-blue-400: #82acff;
+  --color-blue-500: #82acff;
+  --color-purple-500: #c69cff;
+  --color-fuchsia-400: #f5b8e6;
+  --color-fuchsia-500: #c69cff;
+}
+
+:root {
+  /* accent-500 as channels, for glows/tints that need alpha: rgb(var(--accent-rgb) / 0.2) */
+  --accent-rgb: 159 229 151;
+  --mauve-rgb: 198 156 255;
+  --lavender-rgb: 174 184 255;
+}
+
+body {
+  background-color: var(--color-ctp-mantle);
+  background-image:
+    radial-gradient(circle, rgb(var(--lavender-rgb) / 0.09) 1px, transparent 1px);
+  background-size: 12px 12px;
+  background-attachment: fixed;
+  background-position: center center;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, rgb(var(--accent-rgb) / 0.55) 1.5px, transparent 1.5px);
+  background-size: 12px 12px;
+  background-attachment: fixed;
+  background-position: center center;
+  mask-image: radial-gradient(circle 120px at var(--mouse-x, -100px) var(--mouse-y, -100px), black, transparent);
+  -webkit-mask-image: radial-gradient(circle 120px at var(--mouse-x, -100px) var(--mouse-y, -100px), black, transparent);
+  z-index: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Slowly rotating grid + diagonals behind everything (rendered by <Backdrop /> in App.tsx).
+   Oversized so the corners never enter the viewport while spinning. */
+.backdrop-layer {
+  position: fixed;
+  inset: -60%;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform;
+}
+.backdrop-grid {
+  background-image:
+    linear-gradient(to right, rgb(var(--lavender-rgb) / 0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--lavender-rgb) / 0.055) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(ellipse at center, black 20%, transparent 62%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 20%, transparent 62%);
+  animation: backdrop-spin 200s linear infinite;
+}
+.backdrop-diagonals {
+  background-image: repeating-linear-gradient(45deg, rgb(var(--accent-rgb) / 0.05) 0 1px, transparent 1px 110px);
+  mask-image: radial-gradient(ellipse at center, transparent 18%, black 45%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse at center, transparent 18%, black 45%, transparent 72%);
+  animation: backdrop-spin 330s linear infinite reverse;
+}
+@keyframes backdrop-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* cursor-follow glow for cards (set --spot-x/--spot-y from JS) */
+.spotlight::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+  background: radial-gradient(280px circle at var(--spot-x, 50%) var(--spot-y, 50%), rgb(var(--accent-rgb) / 0.1), transparent 70%);
+}
+.spotlight:hover::after {
+  opacity: 1;
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee 45s linear infinite;
+}
+.marquee-mask:hover .animate-marquee {
+  animation-play-state: paused;
+}
+.marquee-mask {
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+
+/* terminal block cursor: solid while typing, blinks when idle, hollow when unfocused */
+.term-cursor {
+  background-color: var(--color-accent-400);
+  color: var(--color-ctp-crust);
+}
+.term-cursor-blink {
+  animation: term-blink 1.06s step-end infinite;
+}
+.term-cursor-idle {
+  background-color: transparent;
+  color: inherit;
+  box-shadow: inset 0 0 0 1px rgb(var(--accent-rgb) / 0.8);
+}
+@keyframes term-blink {
+  50% {
+    background-color: transparent;
+    color: var(--color-zinc-200);
+  }
+}
+
+/* ---------- blog article (HTML is pre-rendered by scripts/build-blog.ts) ---------- */
+.prose-terminal {
+  color: var(--color-zinc-300);
+  font-size: 1.0625rem;
+  line-height: 1.8;
+  overflow-wrap: break-word;
+}
+.prose-terminal > * + * {
+  margin-top: 1.25em;
+}
+.prose-terminal h2,
+.prose-terminal h3,
+.prose-terminal h4 {
+  position: relative;
+  color: var(--color-zinc-100);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  scroll-margin-top: 5rem;
+}
+.prose-terminal h2 {
+  font-size: 1.75rem;
+  margin-top: 2.2em;
+  padding-top: 0.6em;
+  border-top: 1px solid color-mix(in oklab, var(--color-zinc-800) 60%, transparent);
+}
+.prose-terminal h3 {
+  font-size: 1.3rem;
+  margin-top: 1.8em;
+}
+.prose-terminal .heading-anchor {
+  position: absolute;
+  left: -1.1em;
+  width: 1em;
+  color: var(--color-ctp-mauve);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  opacity: 0;
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+.prose-terminal :is(h2, h3, h4):hover .heading-anchor {
+  opacity: 1;
+}
+.prose-terminal a:not(.heading-anchor) {
+  color: var(--color-ctp-blue);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--color-ctp-blue) 45%, transparent);
+  text-underline-offset: 3px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+.prose-terminal a:not(.heading-anchor):hover {
+  color: var(--color-ctp-lavender);
+  text-decoration-color: var(--color-ctp-lavender);
+}
+.prose-terminal strong {
+  color: var(--color-zinc-100);
+  font-weight: 600;
+}
+.prose-terminal ul,
+.prose-terminal ol {
+  padding-left: 1.4em;
+}
+.prose-terminal ul {
+  list-style: none;
+}
+.prose-terminal ul > li {
+  position: relative;
+}
+.prose-terminal ul > li::before {
+  content: "▸";
+  position: absolute;
+  left: -1.3em;
+  color: var(--color-ctp-mauve);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  top: 0.15em;
+}
+.prose-terminal ul.contains-task-list > li::before {
+  content: none;
+}
+.prose-terminal ul.contains-task-list {
+  padding-left: 0;
+}
+.prose-terminal input[type="checkbox"] {
+  accent-color: var(--color-accent-500);
+  margin-right: 0.5em;
+  transform: translateY(1px);
+}
+.prose-terminal ol {
+  list-style: decimal;
+}
+.prose-terminal ol > li::marker {
+  color: var(--color-ctp-peach);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.prose-terminal li + li {
+  margin-top: 0.4em;
+}
+.prose-terminal blockquote {
+  border-left: 2px solid var(--color-ctp-mauve);
+  background: rgb(var(--mauve-rgb) / 0.07);
+  padding: 0.75em 1.25em;
+  color: var(--color-zinc-300);
+}
+.prose-terminal :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--color-accent-300);
+  background: var(--color-ctp-mantle);
+  border: 1px solid var(--color-zinc-800);
+  padding: 0.1em 0.4em;
+}
+.prose-terminal hr {
+  border: 0;
+  border-top: 1px dashed var(--color-zinc-700);
+  margin: 2.5em 0;
+}
+.prose-terminal img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid color-mix(in oklab, var(--color-zinc-800) 60%, transparent);
+}
+.prose-terminal table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+.prose-terminal th,
+.prose-terminal td {
+  border: 1px solid var(--color-zinc-800);
+  padding: 0.55em 0.9em;
+  text-align: left;
+}
+.prose-terminal th {
+  font-family: var(--font-mono);
+  font-size: 0.8em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-zinc-500);
+  background: var(--color-ctp-mantle);
+}
+.prose-terminal .code-block {
+  border: 1px solid var(--color-zinc-800);
+  background: var(--color-ctp-mantle);
+}
+.prose-terminal .code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35em 0.9em;
+  border-bottom: 1px solid var(--color-zinc-800);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-zinc-500);
+  text-transform: lowercase;
+}
+.prose-terminal .code-copy {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--color-zinc-500);
+  padding: 0.1em 0.5em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.prose-terminal .code-copy:hover {
+  color: var(--color-accent-400);
+  border-color: rgb(var(--accent-rgb) / 0.45);
+}
+.prose-terminal pre {
+  margin: 0;
+  padding: 1em 1.1em;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  background-color: transparent !important;
+}
+.prose-terminal pre:focus-visible {
+  outline: 1px solid var(--color-accent-500);
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .term-cursor-blink { animation: none; }
+  .backdrop-grid,
+  .backdrop-diagonals { animation: none; }
+  html { scroll-behavior: auto; }
+  .animate-marquee { animation: none; }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-ctp-mantle);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-zinc-800);
+  border: 2px solid var(--color-ctp-mantle);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ctp-mauve);
+}
+
+html.light {
+  filter: invert(1) hue-rotate(180deg) sepia(0.15) brightness(0.98) contrast(0.9);
+  background-color: #f8f6f2 !important;
+}
+
+html.light img, html.light video {
+  filter: invert(1) hue-rotate(180deg) sepia(0) brightness(1.05) contrast(1.1);
+}
