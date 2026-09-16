@@ -11,7 +11,7 @@ import {
   Search, Copy, Check, Clock, ArrowUpRight, Send, Hash, Minus, Maximize2, Minimize2, PenLine, Rss
 } from 'lucide-react';
 import { SectionHeading, TONES, tagTone, trackSpot, useActiveSection } from './ui';
-import { Link, matchRoute, navigate, usePath } from './router';
+import { isPlainLeftClick, Link, matchRoute, navigate, usePath } from './router';
 import { formatDate, getIndex, usePosts } from './blog/data';
 import BlogIndex from './blog/BlogIndex';
 import BlogPost from './blog/BlogPost';
@@ -1248,14 +1248,28 @@ const scrollToId = (id: string) => {
   else document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
 };
 
-function useIstClock() {
-  const fmt = () => new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
-  const [time, setTime] = useState(fmt);
+/** visitor's local time and zone abbreviation, from the browser's own timezone (no geolocation) */
+function useLocalClock() {
+  const read = () => {
+    const now = new Date();
+    const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    // locales only know their own region's abbreviations (en-US has no "IST"), so take the first real one
+    const names = [navigator.language, 'en-US', 'en-GB', 'en-IN', 'en-AU'].map((loc) => {
+      try {
+        return new Intl.DateTimeFormat(loc, { timeZoneName: 'short' }).formatToParts(now).find((p) => p.type === 'timeZoneName')?.value ?? '';
+      } catch {
+        return '';
+      }
+    });
+    const zone = names.find((n) => n && !/^(GMT|UTC)[+-]/.test(n)) ?? names.find(Boolean) ?? '';
+    return { time, zone, tzId: Intl.DateTimeFormat().resolvedOptions().timeZone ?? '' };
+  };
+  const [clock, setClock] = useState(read);
   useEffect(() => {
-    const id = setInterval(() => setTime(fmt()), 15000);
+    const id = setInterval(() => setClock(read()), 15000);
     return () => clearInterval(id);
   }, []);
-  return time;
+  return clock;
 }
 
 const Kbd = ({ children }: { children: React.ReactNode }) => (
@@ -1570,7 +1584,7 @@ export default function App() {
   const route = matchRoute(usePath());
   const posts = usePosts();
   const onBlog = route.name === 'blog' || route.name === 'post';
-  const istTime = useIstClock();
+  const clock = useLocalClock();
   const activeSection = useActiveSection(NAV_IDS, route.name);
   const { scrollY, scrollYProgress } = useScroll();
   const progress = useSpring(scrollYProgress, { stiffness: 140, damping: 30, restDelta: 0.001 });
@@ -1715,15 +1729,21 @@ export default function App() {
         {/* Header */}
         <header className="sticky top-0 z-40 border-b border-zinc-800/60 px-4 sm:px-6 h-14 flex justify-between items-center font-mono text-sm text-zinc-500 gap-3 bg-ctp-base/85 backdrop-blur-md">
           <div className="flex items-center gap-4 min-w-0">
-            <span
-              className={`font-bold cursor-pointer select-none transition-colors whitespace-nowrap ${compromised ? 'text-red-500 animate-pulse' : 'text-accent-500'}`}
-              onClick={() => setSysClicks((c) => c + 1)}
-              title="Click me 5 times..."
+            <Link
+              to="/"
+              onClick={(e) => {
+                if (isHome && isPlainLeftClick(e)) {
+                  e.preventDefault();
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+              className={`font-bold select-none transition-colors whitespace-nowrap ${compromised ? 'text-red-500 animate-pulse' : 'text-accent-500 hover:text-accent-300'}`}
+              title="Home"
             >
-              {compromised ? 'ROOT_ACCESS_GRANTED' : 'SYS.ID: VA-02'}
-            </span>
-            <span className="hidden sm:flex items-center gap-1.5 text-xs whitespace-nowrap" title="Local time in Kalyani">
-              <Clock className="w-3.5 h-3.5" /> KALYANI {istTime} IST
+              {compromised ? 'ROOT_ACCESS_GRANTED' : 'VRJ02'}
+            </Link>
+            <span className="hidden sm:flex items-center gap-1.5 text-xs whitespace-nowrap" title={`Your local time${clock.tzId ? ` (${clock.tzId})` : ''}`}>
+              <Clock className="w-3.5 h-3.5" /> {clock.time} {clock.zone}
             </span>
           </div>
           <nav className="hidden md:flex items-center gap-1 text-xs">
@@ -1989,7 +2009,7 @@ export default function App() {
 
           {/* Contact */}
           <section id="contact" className="scroll-mt-24">
-            <SectionHeading index={posts && posts.length > 0 ? '06' : '05'} label="// OPEN_CHANNEL" right={`KALYANI · ${istTime} IST`} />
+            <SectionHeading index={posts && posts.length > 0 ? '06' : '05'} label="// OPEN_CHANNEL" right={`${clock.time} ${clock.zone}`.trim()} />
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               whileInView={{ opacity: 1, y: 0 }}
